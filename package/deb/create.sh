@@ -56,6 +56,10 @@ Description: ${APPNAME}
  skeleton of a bash application
 EOF
 
+cat > "${FNAME}/DEBIAN/preinst" <<\EOF
+#!/bin/sh
+EOF
+
 cat > "${FNAME}/DEBIAN/postinst" <<\EOF
 #!/bin/sh
 EOF
@@ -64,11 +68,21 @@ cat > "${FNAME}/DEBIAN/postrm" <<\EOF
 #!/bin/sh
 EOF
 
+cat > "${FNAME}/DEBIAN/prerm" <<\EOF
+#!/bin/sh
+EOF
+
 chmod +x "${FNAME}/DEBIAN/postinst"
 chmod +x "${FNAME}/DEBIAN/postrm"
+chmod +x "${FNAME}/DEBIAN/preinst"
+chmod +x "${FNAME}/DEBIAN/prerm"
 
-cat > "${FNAME}/DEBIAN/conffiles" <<\EOF
-EOF
+cd $FNAME/etc > /dev/null 2> /dev/null
+[ $? -eq 0 ] && CONFFILES="$(find * -type f -printf '/etc/%p\n')" && cd -
+
+if [ "$CONFFILES" != "" ]; then
+  echo "$CONFFILES" > "${FNAME}/DEBIAN/conffiles"
+fi
 
 cd "${FNAME}"
 find . -type f ! -regex '.*.hg.*' ! -regex '.*?debian-binary.*' ! -regex '.*?DEBIAN.*' -printf "%P " | xargs md5sum > "DEBIAN/md5sums"

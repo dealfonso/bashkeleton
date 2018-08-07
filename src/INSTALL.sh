@@ -18,6 +18,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# USAGE:
+# This script will be called as 
+#
+# ./INSTALL <src folder> <prefix>
+#
+# It will install the application into the folder <prefix>. If you want to
+#   make a system-wide installation, please include / as prefix. The purpose
+#   of using a prefix is mainly to generate packages.
+#
+# CONFIGURATION:
+#
+# Update the following values for the files that implement your package
+
+# Files that will be bashflattened to get a single file without dependencies 
+#   (i.e. will try to remove "source" dependencies of the scripts). These
+#   files will be copied to <PREFIX>/usr/share/$APPNAME folder
+APPBASHFLATTEN=""
+
+# Files that will be copied as-is to <PREFIX>/usr/share/$APPNAME folder
+APPFILES="version LICENSE"
+
+# Files that will be copied as-is to <PREFIX>/usr/bin folder
+APPBINFILES=""
+
+# Files that will be bashflattened to get a single file without dependencies 
+#   (i.e. will try to remove "source" dependencies of the scripts). These
+#   files will be copied to <PREFIX>/usr/bin folder
+APPBASHFLATTENBINFILES="bashkeleton"
+
+# ---------------------------------------------------------------------
+# DO NOT MODIFY from here on
+# ---------------------------------------------------------------------
+
 function _chmod() {
   local RECURSE="$1"
   local MODE
@@ -50,7 +83,6 @@ mkdir -p "${PREFIX}/usr/bin"
 mkdir -p "${PREFIX}/$APPDIR"
 mkdir -p "${PREFIX}/${ETCDIR}"
 
-APPFILES="version LICENSE"
 for i in $APPFILES; do
   D="$(dirname $i)"
   if [ "$D" == ".." -o "$D" == "." ]; then
@@ -61,19 +93,16 @@ for i in $APPFILES; do
   cp -r "$SRCFOLDER/$i" "$D"
 done
 
-APPBASHFLATTEN=""
 for i in $APPBASHFLATTEN; do
   F="$(basename "$i")"
   ${SRCFOLDER}/bashflatten -C "${SRCFOLDER}/$i" > "${PREFIX}/$APPDIR/$F" 
 done
 
-APPBINFILES=""
-for i in $APPBASHFLATTENBINFILES; do
+for i in $APPBINFILES; do
   cp -r "$SRCFOLDER/$i" "${PREFIX}/usr/bin/"
   _chmod -R 755 "${PREFIX}/usr/bin/$i"
 done
 
-APPBASHFLATTENBINFILES="bashkeleton"
 for i in $APPBASHFLATTENBINFILES; do
   F="$(basename "$i")"
   ${SRCFOLDER}/bashflatten -C "${SRCFOLDER}/$i" > "${PREFIX}/usr/bin/$F" 
@@ -86,9 +115,11 @@ for i in "$APPETCFILES"; do
   if [ "$D" == ".." -o "$D" == "." ]; then
     D=
   fi
-  D="${PREFIX}/$D"
-  mkdir -p "$D"
-  cp -r "$SRCFOLDER/$i" "$D"
+  if [ -e "$SRCFOLDER/$i" ]; then
+    D="${PREFIX}/$D"
+    mkdir -p "$D"
+    cp -r "$SRCFOLDER/$i" "$D"
+  fi
 done
 
 if [ "$PREFIX" != "/" ]; then
