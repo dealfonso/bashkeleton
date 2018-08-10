@@ -1,4 +1,34 @@
 #!/bin/bash
+function usage() {
+  cat <<EOF
+
+This is a tool that tries to flatten bash applications. It is useful if you use source statements
+  to organize your files. In this case, this tool will make a single file with no outern dependencies.
+
+  The application also includes one tool to try to remove unused functions (strip-functions). This
+  is useful to create libraries with a lot of funcions in it, but only include those that are used in
+  the resulting application.
+
+$0 <options>
+  --execute|-e              Execute the resulting file (it admits parameters at the end)
+  --chdir|-c <folder>       Changes the working directory to the one provided as a parameter
+                            (i.e. cd <folder> ... cd -)
+  --chdir-to-file|-C        Changes the working directory to the one in which the file is
+                            (in case that the file is in other folder)
+  --file|-f <filename>      Outputs the resulting process to the file <filename>
+  --skipmissing|-s          Skips the files that could not be found when detecting the command
+                            source. Otherwise the app will stop if cannot find the file to include
+  --onlyonce|-o             The app will try to detect the "source" statements only once. Take
+                            into account that if one sourced file also includes a "source" statement,
+                            using this mode it will not be sourced.
+  --strip-functions|-S      Try to remove the unused functions (useful to create minimal commands)
+  --verbose | -v            Shows more information about the procedure.
+  --debug                   Shows a lot more information about the procedure.
+  --help | -h               Shows this help and exits.
+  
+EOF
+}
+
 function p_errfile() {
   if [ "$LOGFILE" == "" ]; then
     echo "$@" >&2
@@ -82,6 +112,40 @@ function sanitize() {
   echo "$1" | sed -e 's/\([[\/.*]\|\]\)/\\&/g'
 }
 
+function getfunctions_fnc() {
+echo "$1" | awk '
+  /^[ \t]*function (.*)/{
+    ship=1; # ship is used as a boolean
+    match($0, /^[ \t]*function ([^{(]+).*{.*/, arr)
+    fncname=arr[1]
+    print fncname
+  }
+' 
+}
+
+function strip_fnc() {
+# https://stackoverflow.com/a/33516495
+echo "$2" | awk "
+  /^[ \t]*function [ \t]*$1[ \t\({].*/{
+    ship=1; # ship is used as a boolean
+    b=0 # The factor between open / close brackets
+  }
+  /^[ \t]*$/{ # Remove empty lines
+    next;
+  }
+  ship {
+    b += split(\$0, tmp, \"{\"); # Count numbers of { in line
+    b -= split(\$0, tmp, \"}\"); # Count numbers of } in line
+    # If open / close brackets are equal the function ends
+    if(b==0) { 
+      ship = 0;
+    }
+    # Ship the rest (printing)
+    next;
+  }
+  1 # Print line"
+}
+
 n=0
 while [ $# -gt 0 ]; do
     if [ "${1:0:1}" == "-" -a "${1:1:1}" != "-" -a "${1:1:1}" != "" ]; then
@@ -104,7 +168,6 @@ PARAMS=()
 n=0
 while [ $n -lt ${#ARR[@]} ]; do
     PARAM="${ARR[$n]}"
-    echo "$PARAM"
     case "$PARAM" in
         --execute|-e)           EXECUTE=true;;
         --chdir|-c)             n=$(($n+1))
@@ -117,6 +180,7 @@ while [ $n -lt ${#ARR[@]} ]; do
         --verbose|-v)           VERBOSE=true;;
         --debug)                DEBUG=true;;
         --help | -h)            usage && finalize;;
+        --strip-functions | -S) STRIPFUNCTIONS=true;;
         --|*)                   [ "$PARAM" == "--" ] && n=$(($n+1))
                                 while [ $n -lt ${#ARR[@]} ]; do
                                   PARAM="${ARR[$n]}"
@@ -188,6 +252,47 @@ while [ "$HAVEWORK" == "true" ]; do
     HAVEWORK=false
   fi
 done
+
+function remove_unused_functions() {
+  local REMOVED CURRENT_CONTENT STRIPPED_CONTENT FOUND_CONTENT
+  local FUNCTIONS="$(getfunctions_fnc "$F_CONTENT" | tr '\n' ' ')"
+  p_debug "functions: 
+  $FUNCTIONS"
+
+  CURRENT_CONTENT="$1"
+  for f in $FUNCTIONS; do
+    STRIPPED_CONTENT="$(strip_fnc "$f" "$CURRENT_CONTENT")"
+    FOUND_CONTENT="$(echo "$STRIPPED_CONTENT" | grep "\b$f\b")"
+    if [ "$FOUND_CONTENT" == "" ]; then
+      p_debug "removing function '$f'"
+      CURRENT_CONTENT="$STRIPPED_CONTENT"
+      REMOVED=true
+    else
+      p_debug "keeping function '$f'"
+    fi
+  done
+  echo "$CURRENT_CONTENT"
+  if [ "$REMOVED" == "true" ]; then
+    return 1
+  fi
+  return 0
+}
+
+# Now let's strip the functions
+if [ "$STRIPFUNCTIONS" == "true" ]; then
+  F_CONTENT="$(cat "$_TMPFILE1")"
+  REPEAT=true
+
+  while [ "$REPEAT" == "true" ]; do
+    F_CONTENT="$(remove_unused_functions "$F_CONTENT")"
+    if [ $? -eq 0 ]; then
+      REPEAT=false
+      p_debug "no more changes"
+    fi
+  done
+
+  echo "$F_CONTENT" > "$_TMPFILE1"
+fi
 
 if [ "$OUTFILE" != "" ]; then
   mv "$_TMPFILE1" "$OUTFILE"
